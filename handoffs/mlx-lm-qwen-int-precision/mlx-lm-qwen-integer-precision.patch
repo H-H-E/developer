@@ -1,0 +1,179 @@
+diff --git a/mlx_lm/tool_parsers/qwen3_coder.py b/mlx_lm/tool_parsers/qwen3_coder.py
+index b9a6f9ffdc7a2bc886362937fda402f1f7eac5c7..2c3f191726b2ee8c32c453564bbb3ac58cc3010d 100644
+--- a/mlx_lm/tool_parsers/qwen3_coder.py
++++ b/mlx_lm/tool_parsers/qwen3_coder.py
+@@ -7,6 +7,7 @@ https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct/blob/main/qwen3coder_to
+ 
+ import ast
+ import json
++from decimal import Decimal
+ from typing import Any, Optional
+ 
+ import regex as re
+@@ -55,11 +56,20 @@ def _convert_param_value(param_value: str, param_name: str, param_config: dict)
+         or param_type.startswith("short")
+         or param_type.startswith("unsigned")
+     ):
++        # Keep the existing finite-float range, but convert the value exactly.
+         float_param_value = float(param_value)
+-        int_param_value = int(float_param_value)
+-        if float_param_value - int_param_value != 0:
++        if not float_param_value.is_integer():
++            raise ValueError(f"Invalid integer literal {param_value!r}")
++        if float_param_value == 0:
++            # Distinguish exact zero from underflow without expanding the exponent.
++            coefficient = param_value.lower().partition("e")[0]
++            if not Decimal(coefficient).is_zero():
++                raise ValueError(f"Invalid integer literal {param_value!r}")
++            return 0
++        decimal_param_value = Decimal(param_value)
++        if decimal_param_value != decimal_param_value.to_integral_value():
+             raise ValueError(f"Invalid integer literal {param_value!r}")
+-        return int_param_value
++        return int(decimal_param_value)
+     elif param_type.startswith("num") or param_type.startswith("float"):
+         float_param_value = float(param_value)
+         int_param_value = int(float_param_value)
+diff --git a/tests/test_qwen3_coder_numeric.py b/tests/test_qwen3_coder_numeric.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc6f2f3e6519c5d0da3e1e554e9de8df378d5b2e
+--- /dev/null
++++ b/tests/test_qwen3_coder_numeric.py
+@@ -0,0 +1,136 @@
++import json
++import unittest
++from decimal import InvalidOperation, localcontext
++
++from mlx_lm.tool_parsers import qwen3_coder
++
++
++class TestQwen3CoderNumeric(unittest.TestCase):
++    def parse_argument(self, value, param_type="integer"):
++        tools = [
++            {
++                "type": "function",
++                "function": {
++                    "name": "lookup",
++                    "parameters": {
++                        "type": "object",
++                        "properties": {"value": {"type": param_type}},
++                    },
++                },
++            }
++        ]
++        output = (
++            "<function=lookup>\n"
++            f"<parameter=value>\n{value}\n</parameter>\n"
++            "</function>"
++        )
++        return qwen3_coder.parse_tool_call(output, tools)["arguments"]["value"]
++
++    def test_exact_large_integers(self):
++        for value in (2**53 + 1, -(2**53 + 1), 2**63 - 1, 2**64 - 1):
++            for text in (str(value), f"{value}.0", f"{value}e0"):
++                with self.subTest(text=text):
++                    result = self.parse_argument(text)
++                    self.assertIs(type(result), int)
++                    self.assertEqual(result, value)
++
++    def test_supported_integer_spellings(self):
++        for text, expected in (
++            ("140", 140),
++            ("140.0", 140),
++            ("1.4e2", 140),
++            ("1400e-1", 140),
++            ("-3.0", -3),
++            ("+42", 42),
++            (" 42 ", 42),
++            ("0.0", 0),
++            ("-0", 0),
++        ):
++            with self.subTest(text=text):
++                result = self.parse_argument(text)
++                self.assertIs(type(result), int)
++                self.assertEqual(result, expected)
++
++    def test_fractional_values_are_not_rounded_to_integers(self):
++        for text in (
++            "140.5",
++            "1.0000000000000001",
++            "0.99999999999999999",
++            "-1.0000000000000001",
++            "9007199254740992.5",
++            "1e-400",
++            "1e-999999999999999999999999999999",
++        ):
++            with self.subTest(text=text):
++                with self.assertRaises(ValueError):
++                    self.parse_argument(text)
++
++    def test_nonfinite_and_out_of_range_values_are_rejected(self):
++        for text in ("NaN", "inf", "-Infinity", "1e309", "1e1000000000"):
++            with self.subTest(text=text):
++                with self.assertRaises(ValueError):
++                    self.parse_argument(text)
++
++    def test_extreme_zero_exponents_are_unchanged(self):
++        for text in (
++            "0e999999999999999999999999999999",
++            "-0e-999999999999999999999999999999",
++        ):
++            for trap in (True, False):
++                with self.subTest(text=text, trap=trap):
++                    with localcontext() as context:
++                        context.traps[InvalidOperation] = trap
++                        self.assertEqual(self.parse_argument(text), 0)
++
++    def test_invalid_literals_are_rejected(self):
++        for text in ("", "abc", "1.2.3", "0x10"):
++            with self.subTest(text=text):
++                with self.assertRaises(ValueError):
++                    self.parse_argument(text)
++
++    def test_integer_schema_aliases(self):
++        for param_type in ("int", "int64", "uint64", "long", "short", "unsigned"):
++            with self.subTest(param_type=param_type):
++                self.assertEqual(
++                    self.parse_argument("9007199254740993", param_type), 2**53 + 1
++                )
++
++    def test_null_is_unchanged(self):
++        for text in ("null", "NULL", "Null"):
++            with self.subTest(text=text):
++                self.assertIsNone(self.parse_argument(text))
++
++    def test_other_schema_types_are_unchanged(self):
++        for text, param_type, expected in (
++            ("9007199254740993", "string", "9007199254740993"),
++            ("1.25", "number", 1.25),
++            ("true", "boolean", True),
++            ('{"a": 1}', "object", {"a": 1}),
++            ("[1, 2]", "array", [1, 2]),
++        ):
++            with self.subTest(param_type=param_type):
++                result = self.parse_argument(text, param_type)
++                self.assertIs(type(result), type(expected))
++                self.assertEqual(result, expected)
++
++    def test_no_schema_keeps_raw_argument(self):
++        output = (
++            "<function=lookup>"
++            "<parameter=value>9007199254740993</parameter>"
++            "</function>"
++        )
++        result = qwen3_coder.parse_tool_call(output)
++        self.assertEqual(result["arguments"]["value"], "9007199254740993")
++
++    def test_decimal_context_precision_does_not_round(self):
++        with localcontext() as context:
++            context.prec = 3
++            self.assertEqual(self.parse_argument("9223372036854775807.0"), 2**63 - 1)
++
++    def test_json_round_trip_preserves_integer(self):
++        value = self.parse_argument("9007199254740993")
++        self.assertEqual(json.loads(json.dumps({"id": value}))["id"], 2**53 + 1)
++
++
++if __name__ == "__main__":
++    unittest.main()
++
