@@ -1,0 +1,35 @@
+You are validating a proposed upstream contribution in ml-explore/mlx-lm on Hussein's Mac, not scouting a new project or starting an unrelated rewrite.
+
+INPUT
+This handoff contains README.md and mlx-lm-qwen-integer-precision.patch. The investigated upstream commit is 28e9ccd9cb52d1d4a6f674b7914bae2de49d9aad; the original parser's Git blob is b9a6f9ffdc7a2bc886362937fda402f1f7eac5c7.
+
+TASK
+Complete normal-package/native validation and prepare a reviewable branch for a small integer-coercion correctness fix. Do not claim a PR already exists, that this is merged, or that prior isolated checks prove native integration.
+
+CONTRIBUTION RULES
+Read current upstream CONTRIBUTING.md and any applicable agent instructions. The policy observed during scouting permits AI-assisted code with disclosure and human comprehension, but prohibits AI-written GitHub posts including PR descriptions. Do not write or post issues, PR prose, comments, or disclosure text on the user's behalf. Provide private factual results and authoring questions instead. Do not push upstream or open a PR without explicit approval.
+
+1. CHECK VALIDITY AND COLLISIONS
+Fetch current upstream main. Verify the precision defect still exists. Search current issues and PRs for qwen3_coder integer precision, 9007199254740993, Decimal, and related work. Inspect merged #1417 and any new matching work. Older checked PRs #1635, #1766, and #1310 were closed, but recheck rather than assuming. If an active equivalent fix now exists, do not compete; report the collision.
+
+2. PROTECT THE WORKSPACE
+Use a clean dedicated branch/worktree. Preserve unrelated edits. Do not force-apply the patch. If current code differs, understand why and reproduce on current main; adapt only the same narrow fix if still needed.
+
+3. READ AND REPRODUCE
+Read the parser, ToolCallFormatter call site, current tests/test_tool_parsing.py, and the proposed tests/test_qwen3_coder_numeric.py from the patch. Run the new tests against unmodified source in a temporary baseline worktree; capture actual failures. Confirm large integer IDs change and near-integral fractions are wrongly accepted. Do not replace production code with a toy implementation or mock away the failing conversion.
+
+4. APPLY AND REVIEW
+Apply the two-file patch only after git apply --check succeeds. Review use of Decimal on the original string, exact integrality, the finite-float admission bound, exact zero versus underflow, huge exponents, context precision/traps, and supported schema types. Nonfinite integer inputs now use ValueError rather than OverflowError: verify behavior at the formatter boundary. Do not change number/float semantics, model code, global schema validation, HTTP error design, dependencies, or unrelated formatting.
+
+5. NORMAL-PACKAGE AND NATIVE TESTS
+Set up the repository's documented development environment on the Mac. Install dependencies only through its normal documented workflow. Run the proposed tests using normal package imports, then existing parser, tokenizer, server, and complete test suites as appropriate. The observed standard command was python -m unittest discover tests/; verify current instructions. Check baseline failures separately from patch regressions. Record every command and exit status. Missing optional dependencies or resource limits are not passes.
+
+Add a small formatter-boundary regression test if existing tests can exercise it without model downloads, but do not expand the patch merely to increase test count. Run live inference/HTTP tests only when the necessary model is already available or the user authorizes its download/resource cost. Otherwise label those checks NOT RUN.
+
+6. STYLE AND PERFORMANCE
+Run current pinned hooks. The observed configuration was Black 25.1.0, isort 6.0.0 with black profile, and Ruff 0.16.6; reread rather than freezing stale instructions. Run configured type checks when applicable. Do not claim to run a checker that is absent. Keep unrelated formatter churn out of the diff.
+
+7. REVIEW AND HUMAN HANDOFF
+Review the final diff for scope, tests, secrets, temporary files, and dependency changes. If a separate independent reviewer is available, use it and state exactly what reviewed what; otherwise label the review self-review.
+
+Return: current base SHA, exact reproduction, final diff and statistics, file list, commands and outputs under PASSED / FAILED / NOT RUN, performance results with scope, remaining uncertainties, current collision findings, and private facts the human needs to write the PR. Explain the fix so Hussein can defend every line in an interview. Stop before publication and before writing public PR prose.
