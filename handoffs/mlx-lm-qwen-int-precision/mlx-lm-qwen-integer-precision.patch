@@ -1,5 +1,5 @@
 diff --git a/mlx_lm/tool_parsers/qwen3_coder.py b/mlx_lm/tool_parsers/qwen3_coder.py
-index b9a6f9ffdc7a2bc886362937fda402f1f7eac5c7..2c3f191726b2ee8c32c453564bbb3ac58cc3010d 100644
+index b9a6f9f..2c3f191 100644
 --- a/mlx_lm/tool_parsers/qwen3_coder.py
 +++ b/mlx_lm/tool_parsers/qwen3_coder.py
 @@ -7,6 +7,7 @@ https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct/blob/main/qwen3coder_to
@@ -34,12 +34,61 @@ index b9a6f9ffdc7a2bc886362937fda402f1f7eac5c7..2c3f191726b2ee8c32c453564bbb3ac5
      elif param_type.startswith("num") or param_type.startswith("float"):
          float_param_value = float(param_value)
          int_param_value = int(float_param_value)
+diff --git a/tests/test_server.py b/tests/test_server.py
+index bafb7c8..d40c857 100644
+--- a/tests/test_server.py
++++ b/tests/test_server.py
+@@ -22,7 +22,7 @@ from mlx_lm.server import (
+     ToolCallFormatter,
+     _make_sampler,
+ )
+-from mlx_lm.tool_parsers import pythonic
++from mlx_lm.tool_parsers import pythonic, qwen3_coder
+ from mlx_lm.utils import load
+ 
+ 
+@@ -232,6 +232,33 @@ class TestToolCallFormatter(unittest.TestCase):
+             {"items": [{"name": "noodles", "organic": True}]},
+         )
+ 
++    def test_preserves_qwen3_coder_large_integer(self):
++        tools = [
++            {
++                "type": "function",
++                "function": {
++                    "name": "lookup",
++                    "parameters": {
++                        "type": "object",
++                        "properties": {"value": {"type": "integer"}},
++                    },
++                },
++            }
++        ]
++        formatter = ToolCallFormatter(qwen3_coder.parse_tool_call, tools=tools)
++        raw_tool_call = (
++            "<function=lookup>"
++            "<parameter=value>9007199254740993</parameter>"
++            "</function>"
++        )
++
++        tool_calls = formatter([raw_tool_call])
++
++        self.assertEqual(
++            json.loads(tool_calls[0]["function"]["arguments"]),
++            {"value": 9007199254740993},
++        )
++
+ 
+ class TestServer(unittest.TestCase):
+     @classmethod
 diff --git a/tests/test_qwen3_coder_numeric.py b/tests/test_qwen3_coder_numeric.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..dc6f2f3e6519c5d0da3e1e554e9de8df378d5b2e
+index 0000000..97b6182
 --- /dev/null
 +++ b/tests/test_qwen3_coder_numeric.py
-@@ -0,0 +1,136 @@
+@@ -0,0 +1,138 @@
++# Copyright © 2026 Hussein
++
 +import json
 +import unittest
 +from decimal import InvalidOperation, localcontext
@@ -176,4 +225,3 @@ index 0000000000000000000000000000000000000000..dc6f2f3e6519c5d0da3e1e554e9de8df
 +
 +if __name__ == "__main__":
 +    unittest.main()
-+

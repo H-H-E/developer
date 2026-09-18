@@ -4,7 +4,8 @@ This branch is a staging area only. It does **not** modify `H-H-E/developer` mai
 
 ## What is here
 
-- `mlx-lm-qwen-integer-precision.patch` — proposed two-file MLX-LM patch.
+- `mlx-lm-qwen-integer-precision.patch` — proposed three-file MLX-LM patch, including a formatter-boundary test.
+- `VALIDATION.md` — native validation results and remaining integration limits.
 - `MAC_VALIDATION_PROMPT.txt` — instructions for continuing validation on an Apple Silicon Mac.
 
 Investigated upstream base: `ml-explore/mlx-lm@28e9ccd9cb52d1d4a6f674b7914bae2de49d9aad`.
